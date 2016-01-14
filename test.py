@@ -1,15 +1,28 @@
 from visual import *
+from visual.controls import *
+
 from rnamake import structure, util, basic_io
 import numpy as np
+import gui_window
 
 class VAtom(object):
     def __init__(self, a):
         self.a = a
         self.obj = sphere(pos=a.coords, radius=0.7, color=color.red)
 
-scene = display(title='Examples of Tetrahedrons',
+class VResidue(object):
+    def __init__(self, res, view_mode=0):
+        pass
+
+
+scene = display(title='RNAMake GUI',
      x=0, y=0, width=800, height=800,
      center=(5,0,0), background=(1,1,1), ambient=color.gray(0.5))
+
+"""c = controls(x=0, y=0, width=250, height=250, range=60)
+m1 = menu(pos=(0,0,0), height=7, width=25, text='Options')
+bl = button(pos=(-30,30), height=30, width=40, text='Mode', action=lambda: change())
+m1.items.append(('Mode', lambda: change())) # specify menu item title and action to perform"""
 
 atoms = []
 s = structure.structure_from_pdb("nodes.0.pdb")
@@ -22,6 +35,8 @@ center = util.center(atoms)
 for a in atoms:
     v_atoms.append(VAtom(a))
 
+
+
 scene.center = center
 scene.range = np.array([20,20,20])
 range = np.array([20,20,20])
@@ -30,7 +45,6 @@ points = []
 lines = []
 pick = None
 dragpos = []
-
 
 
 while 1:
