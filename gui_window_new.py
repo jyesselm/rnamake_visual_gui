@@ -4,6 +4,56 @@ from visual.graph import *
 import numpy as np
 import wx
 
+class GUIWindowFunction(object):
+
+    def listen(self, scene):
+        pass
+
+class DrawFunction(GUIWindowFunction):
+    def __init__(self):
+        self.activated = 1
+        self.points = []
+        self.lines = []
+
+    def listen_for_keys(self, key):
+        if key == 'd':
+            if len(self.points) != 0:
+                last = self.points.pop()
+                last.visible = False
+                del last
+            if len(self.lines) != 0:
+                last_l = self.lines.pop()
+                last_l.visible = False
+                del last_l
+
+    def listen_for_mouse(self, scene):
+        if scene.mouse.events:
+            m1 = scene.mouse.getevent() # get event
+
+            if m1.pick is None:
+                p = sphere(pos=m1.pos, radius=1.5, color=color.cyan)
+                self.points.append(p)
+
+                """reg_points = []
+                for p in points:
+                    reg_points.append(p.pos)
+                f = open("points.pdb", "w")
+
+                str = basic_io.points_to_pdb_str(reg_points)
+                f.write(str)
+                f.close()"""
+
+                if len(self.points) > 1:
+                    line = cylinder(pos=self.points[-2].pos,
+                                    axis=p.pos - self.points[-2].pos,
+                                    color=color.black)
+                    self.lines.append(line)
+
+    def listen(self, scene, key):
+        self.listen_for_keys(key)
+        self.listen_for_mouse(scene)
+
+
 class GUIWindowNew(object):
     def __init__(self):
         L = 520
@@ -29,10 +79,16 @@ class GUIWindowNew(object):
                             center=(5,0,0), background=(1,1,1), ambient=color.gray(0.5))
 
         self.range = np.array([20,20,20])
+        self.functions = []
 
     def listen(self):
-        self.listen_for_keys()
+        key = self.listen_for_keys()
         #self.listen_for_mouse()
+
+        for f in self.functions:
+            if not f.activated:
+                continue
+            f.listen(self.scene, key)
 
     def listen_for_keys(self):
         if self.scene.kb.keys: # event waiting to be processed?
@@ -40,27 +96,31 @@ class GUIWindowNew(object):
             if key == 'z':
                 self.scene.range = self.range/2
                 self.range = self.range/2
-            if key == 'x':
+            elif key == 'x':
                 self.scene.range = self.range*2
                 self.range = self.range*2
-            if key == 'a':
+            elif key == 'a':
                 self.scene.forward = self.scene.forward.rotate(angle=0.1, axis=(0,1,0))
-            if key == 'w':
+            elif key == 'w':
                 self.scene.forward = self.scene.forward.rotate(angle=0.1, axis=(0,0,1))
-            if key =='s':
+            elif key =='s':
                 self.scene.forward = self.scene.forward.rotate(angle=0.1, axis=(1,0,0))
 
-            if key =='left':
+            elif key =='left':
                 self.scene.center = self.scene.center+np.array([1,0,0])
-            if key =='right':
+            elif key =='right':
                 self.scene.center = self.scene.center+np.array([-1,0,0])
-            if key =='up':
+            elif key =='up':
                 self.scene.center = self.scene.center+np.array([0,1,0])
-            if key =='down':
+            elif key =='down':
                 self.scene.center = self.scene.center+np.array([0,-1,0])
+            else:
+                return key
+        return None
 
 if __name__ == "__main__":
     win = GUIWindowNew()
+    win.functions.append(DrawFunction())
     p = sphere(pos=[1,0,0], radius=1.5, color=color.cyan)
     while 1:
         rate(100)
