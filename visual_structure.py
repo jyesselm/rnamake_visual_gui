@@ -1,28 +1,57 @@
 from visual import *
 from visual.controls import *
 
-from rnamake import util
+from rnamake import util, motif_graph, motif_type, atom, primitives, motif_factory, residue
 
-class VAtom(object):
+class Drawable(object):
+    def __init__(self):
+        self.view_mode = 0
+        self.drawn = 0
+
+    def draw(self, view_mode=0):
+        raise RuntimeError("tried to call abstract method Drawable:draw")
+
+    def clear(self):
+        raise RuntimeError("tried to call abstract method Drawable:clear")
+
+
+class VAtom(atom.Atom, Drawable):
     def __init__(self, a, color):
-        self.a = a
+        atom.Atom.__init__(self, a.name, a.coords)
+        Drawable.__init__(self)
         self.color = color
 
     def draw(self, view_mode=0):
+        self.view_mode = view_mode
         if view_mode == 0:
-            self.obj = sphere(pos=self.a.coords, radius=0.4, color=self.color)
-        else:
-            pass
+            self.obj = sphere(pos=self.coords, radius=0.4, color=self.color)
+            self.drawn = 1
+
+    def clear(self):
+        if not self.drawn:
+            return
+        if self.view_mode == 0:
+            self.obj.visible = False
+            del self.obj
+            self.obj = None
+            self.drawn = 0
 
 
-class VResidue(object):
-    def __init__(self, res, view_mode=0):
-        self.res = res
-        self.v_atoms = []
+class VResidue(primitives.Residue, Drawable):
+    def __init__(self, res):
+        primitives.Residue.__init__(self, res.name, res.num, res.chain_id, res.i_code)
+        Drawable.__init__(self)
+        self.rtype = res.rtype
+        self.uuid = res.uuid
+        self.atoms = []
+        self.view_mode = 0
+        self.drawn = 0
+        self.bonds = []
+        self.rod = None
 
         for a in res.atoms:
             if a is None:
-                self.v_atoms.append(None)
+                self.atoms.append(None)
             else:
                 c = color.red
                 if a.name[0] == "P":
@@ -32,16 +61,43 @@ class VResidue(object):
                 if a.name[0] == "N":
                     c = color.blue
 
-                self.v_atoms.append(VAtom(a, c))
+                self.atoms.append(VAtom(a, c))
 
-        self.view_mode=view_mode
+    def get_beads(self):
+        """
+		Generates steric beads required for checking for steric clashes between
+		motifs. Each residues has three beads modeled after the typical three
+		bead models used in coarse grain modeling. The three beads are,
+		Phosphate (P, OP1, OP2) Sugar (O5',C5',C4',O4',C3',O3',C1',C2',O2')
+		and Base (All remaining atoms).
+		"""
+        phos_atoms,sugar_atoms,base_atoms = [],[],[]
+
+        for i,a in enumerate(self.atoms):
+            if a is None:
+                continue
+            if   i < 3:
+                phos_atoms.append(a)
+            elif i < 12:
+                sugar_atoms.append(a)
+            else:
+                base_atoms.append(a)
+
+        beads = []
+        types = [residue.BeadType.PHOS, residue.BeadType.SUGAR, residue.BeadType.BASE]
+        for i,alist in enumerate([phos_atoms,sugar_atoms,base_atoms]):
+            if len(alist) > 0:
+                beads.append(residue.Bead(util.center(alist), types[i]))
+
+        return beads
 
     def draw_bond(self, i, j):
-        pos_i = self.v_atoms[i].obj.pos
-        pos_j = self.v_atoms[j].obj.pos
+        pos_i = self.atoms[i].obj.pos
+        pos_j = self.atoms[j].obj.pos
         axis = pos_j - pos_i
 
         b = cylinder(pos=pos_i, axis=axis, radius=0.20)
+        self.bonds.append(b)
 
     def draw_bonds(self):
         self.draw_bond(0, 1)
@@ -58,7 +114,7 @@ class VResidue(object):
         self.draw_bond(9, 10)
         self.draw_bond(10, 11)
 
-        if self.res.name == "G":
+        if self.name == "G":
             self.draw_bond(12, 13)
             self.draw_bond(13, 14)
             self.draw_bond(13, 15)
@@ -74,72 +130,236 @@ class VResidue(object):
             self.draw_bond(12, 18)
 
     def draw(self, view_mode=0):
-        for va in self.v_atoms:
+        self.view_mode = view_mode
+        self.drawn = 1
+        for va in self.atoms:
             if va is not None:
                 va.draw(view_mode)
 
         if view_mode == 0:
             self.draw_bonds()
 
+        if view_mode == 1:
+            beads = self.get_beads()
+            pos_i = beads[1].center
+            pos_j = beads[2].center
+            axis = pos_j - pos_i
+            self.rod = cylinder(pos=pos_i, axis=axis, radius=1.0,
+                                color=color.blue)
 
-class VChain(object):
-    def __init__(self, chain):
-        self.chain = chain
-        self.v_res = []
+    def clear(self):
+        if self.drawn == 0:
+            return
+        self.drawn = 0
 
-        for r in self.chain.residues:
-            self.v_res.append(VResidue(r))
+        for a in self.atoms:
+            a.clear()
+
+        if self.view_mode == 0:
+            for b in self.bonds:
+                b.visible = False
+                del b
+            self.bonds = []
+
+        if self.view_mode == 1:
+            self.rod.visible = False
+            del self.rod
+            self.rod = None
+
+
+class VBasepair(primitives.Basepair, Drawable):
+    def __init__(self, res1, res2, bp):
+        primitives.Basepair.__init__(self, res1, res2, bp.bp_type)
+        Drawable.__init__(self)
+        self.obj = None
+        self.r = bp.r()
+
+    def _get_atoms(self):
+        atoms = []
+        for a in self.res1.atoms:
+            if a is not None:
+                atoms.append(a)
+        for a in self.res2.atoms:
+            if a is not None:
+                atoms.append(a)
+        return atoms
+
+    def d(self):
+        atoms = self._get_atoms()
+        return util.center(atoms)
 
     def draw(self, view_mode=0):
-        for r in self.v_res:
+        self.view_mode = view_mode
+        if view_mode == 1:
+            self.drawn = 1
+            self.obj = cylinder(pos=self.d(), axis=self.r[2]*3,
+                                  radius=8.0, color=color.red)
+
+    def clear(self):
+        if self.drawn == 0:
+            return
+        self.drawn = 0
+        if self.view_mode == 1:
+            self.obj.visible = False
+            del self.obj
+            self.obj = None
+
+
+class VChain(primitives.Chain, Drawable):
+    def __init__(self, chain):
+        residues = []
+        for r in chain.residues:
+            residues.append(VResidue(r))
+
+        primitives.Chain.__init__(self, residues)
+        Drawable.__init__(self)
+
+    def draw(self, view_mode=0):
+        self.drawn = 1
+        for r in self.residues:
             r.draw(view_mode)
 
+    def clear(self):
+        if self.drawn == 0:
+            return
+        self.drawn = 0
+        for r in self.residues:
+            r.clear()
 
-class VStructure(object):
+
+class VStructure(primitives.Structure, Drawable):
     def __init__(self, struct):
-        self.struct = struct
-        self.v_chains = []
-        for c in self.struct.chains:
-            self.v_chains.append(VChain(c))
+        chains = []
+        for c in struct.chains:
+            chains.append(VChain(c))
+        primitives.Structure.__init__(self, chains)
+        Drawable.__init__(self)
 
     def draw(self, view_mode=0):
-        for vc in self.v_chains:
+        self.drawn = 1
+        for vc in self.chains:
             vc.draw(view_mode)
 
-class VBasepair(object):
-    def __init__(self, bp):
-        self.bp = bp
+    def clear(self):
+        if self.drawn == 0:
+            return
+        self.drawn = 0
+        for vc in self.chains:
+            vc.clear()
 
 
-class VMotif(object):
+class VMotif(primitives.Motif, Drawable):
     def __init__(self, motif):
-        self.motif = motif
+        struct = VStructure(motif.structure)
+        self.mtype = motif.mtype
+        self.id = motif.id
+        basepairs = []
+        ends = []
 
-        self.v_struct = VStructure(self.motif.structure)
+        for bp in motif.basepairs:
+            res1 = struct.get_residue(uuid=bp.res1.uuid)
+            res2 = struct.get_residue(uuid=bp.res2.uuid)
+            basepairs.append(VBasepair(res1, res2, bp))
+
+        for end in motif.ends:
+            i = motif.basepairs.index(end)
+            ends.append(basepairs[i])
+
+        primitives.Motif.__init__(self, struct, basepairs, ends)
+        Drawable.__init__(self)
+
+    def _draw_cartoon(self, view_mode):
+        for bp in self.basepairs:
+            if bp.bp_type == "cW-W":
+                bp.draw(view_mode)
+
+        if self.mtype == motif_type.HELIX:
+            return
+
+        end_res = []
+        for end in self.ends:
+            end_res.extend(end.residues())
+
+        for r in self.structure.residues():
+            if r in end_res:
+                continue
+            r.draw(view_mode)
 
     def draw(self, view_mode=0):
+        self.drawn = 1
+        self.view_mode = view_mode
+
         if view_mode == 0:
-            self.v_struct.draw(view_mode)
+            self.structure.draw(view_mode)
+
         if view_mode == 1:
-            pos_i = self.motif.ends[0].d()
-            pos_j = self.motif.ends[1].d()
-            axis = pos_j - pos_i
+            self._draw_cartoon(view_mode)
 
-            dist = util.distance(pos_i, pos_j)
+    def clear(self):
+        if self.drawn == 0:
+            return
 
-            all_pos = []
-            for bp in self.motif.basepairs:
-                if bp.bp_type == "cW-W":
-                    cylinder(pos=bp.d(), axis=bp.r()[2]*3, radius=10.0, color=color.red)
+        self.drawn = 0
+        if self.view_mode == 0:
+            self.structure.clear()
 
-            #b1 = cylinder(pos=pos_i, axis=self.motif.ends[0].r()[2]*dist, radius=8.0)
-            #b2 = cylinder(pos=pos_j, axis=-self.motif.ends[1].r()[2]*dist, radius=8.0)
+        if self.view_mode == 1:
+            for bp in self.basepairs:
+                bp.clear()
+            for r in self.structure.residues:
+                r.clear()
+
+class VMotifGraph(object):
+    def __init__(self, mg=None):
+        self.mg = None
+        self.v_motifs = []
+        self.open_ends = []
+        if mg is None:
+            self.mg = motif_graph.MotifGraph()
+        else:
+            self.mg = mg
+            for n in self.mg.graph:
+                self.v_motifs.append(VMotif(n.data))
 
 
+    def add_motif(self, m=None, parent_index=-1, parent_end_index=-1,
+                  parent_end_name=None, m_name=None, m_end_name=None):
+
+        pos = self.mg.add_motif(m, parent_index, parent_end_index,
+                                parent_end_name, m_name, m_end_name)
+
+        if pos == -1:
+            return pos
+
+        new_m = self.mg.last_node().data
+
+        self.v_motifs.append(VMotif(new_m))
+        self.draw(1)
+
+    def draw(self, view_mode=0):
+        for v_m in self.v_motifs:
+            v_m.draw(view_mode)
+
+        self.open_ends = []
+        leaf_and_ends = self.mg.leafs_and_ends()
+        for n, i in leaf_and_ends:
+            ni = n.index
+            v_end = self.v_motifs[ni].v_ends[i]
+            self.open_ends.append(v_end)
+
+        for v_end in self.open_ends:
+            v_end.color = color.green
+
+        for v_m in self.v_motifs:
+            for end in v_m.v_ends:
+                if end not in self.open_ends:
+                    end.color = color.red
 
 
-
-
+if __name__ == "__main__":
+    m0 = motif_factory.factory.motif_from_file("nodes.0.pdb")
+    vm = VMotif(m0)
+    vm.draw(1)
 
 
 

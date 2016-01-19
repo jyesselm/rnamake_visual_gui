@@ -1,22 +1,28 @@
-from __future__ import division, print_function
 from visual import *
 from visual.graph import *
 import numpy as np
 import wx
+
+import visual_structure
+from rnamake import motif, settings, util, basic_io
+from rnamake import resource_manager as rm
 
 class GUIWindowFunction(object):
 
     def listen(self, scene):
         pass
 
+
 class DrawFunction(GUIWindowFunction):
     def __init__(self):
+        self.name = "Draw"
         self.activated = 1
         self.points = []
+        self.highlighted_end = None
         self.lines = []
 
-    def listen_for_keys(self, key):
-        if key == 'd':
+    def listen_for_keys(self, state):
+        if state.key == 'd':
             if len(self.points) != 0:
                 last = self.points.pop()
                 last.visible = False
@@ -25,23 +31,41 @@ class DrawFunction(GUIWindowFunction):
                 last_l = self.lines.pop()
                 last_l.visible = False
                 del last_l
+        if state.key == 'r':
+            all_points = []
+            reg_points = []
+            for p in self.points:
+                reg_points.append(np.array(p.pos))
 
-    def listen_for_mouse(self, scene):
-        if scene.mouse.events:
-            m1 = scene.mouse.getevent() # get event
+            for i in range(len(reg_points)-1):
+                all_points.append(reg_points[i])
+                diff = reg_points[i+1] - reg_points[i]
+                unit_vector = util.normalize(diff)
+                current = reg_points[i] + unit_vector*5.0
+                while util.distance(reg_points[i+1], current) > 5.0:
+                    all_points.append(current)
+                    current = current + unit_vector*5.0
+
+            s = basic_io.points_to_str(all_points)
+            f = open("all_points.str", "w")
+            f.write(s)
+            f.close()
+            basic_io.points_to_pdb("all_points.pdb", all_points)
+
+            f = open("mg.top", "w")
+            f.write(state.vmg.mg.topology_to_str() + "\n")
+            f.close()
+
+            exit()
+
+    def listen_for_mouse(self, state):
+        if state.scene.mouse.events:
+            m1 = state.scene.mouse.getevent() # get event
 
             if m1.pick is None:
                 p = sphere(pos=m1.pos, radius=1.5, color=color.cyan)
                 self.points.append(p)
 
-                """reg_points = []
-                for p in points:
-                    reg_points.append(p.pos)
-                f = open("points.pdb", "w")
-
-                str = basic_io.points_to_pdb_str(reg_points)
-                f.write(str)
-                f.close()"""
 
                 if len(self.points) > 1:
                     line = cylinder(pos=self.points[-2].pos,
@@ -49,9 +73,26 @@ class DrawFunction(GUIWindowFunction):
                                     color=color.black)
                     self.lines.append(line)
 
-    def listen(self, scene, key):
-        self.listen_for_keys(key)
-        self.listen_for_mouse(scene)
+            elif m1.pick in state.motif_ends:
+                m1.pick.color = color.magenta
+                self.highlighted_end = m1.pick
+
+                if len(self.points) == 0:
+                    p = sphere(pos=m1.pick.pos, radius=1.5, color=color.cyan)
+                    self.points.append(p)
+
+    def listen(self, state):
+        self.listen_for_keys(state)
+        self.listen_for_mouse(state)
+
+
+class GUIWindowState(object):
+    def __init__(self):
+        self.scene = None
+        self.key = None
+        self.motif_ends = []
+        self.vmg = visual_structure.VMotifGraph()
+        self.highlighted = None
 
 
 class GUIWindowNew(object):
@@ -69,10 +110,10 @@ class GUIWindowNew(object):
 
         wx.StaticText(self.p, pos=(0,50), size=(100,20), label='Command:',
               style=wx.ALIGN_CENTRE | wx.ST_NO_AUTORESIZE)
-        tc = wx.TextCtrl(self.p, pos=(100,50), value='',
+        self.tc = wx.TextCtrl(self.p, pos=(100,50), value='',
             size=(800,20), style=wx.TE_MULTILINE)
-        tc.SetInsertionPoint(len(tc.GetValue())+1) # position cursor at end of text
-        tc.SetFocus()
+        self.tc.SetInsertionPoint(len(self.tc.GetValue())+1) #
+        self.tc.SetFocus()
 
         d = 20
         self.scene = display(window=self.window, x=10, y=100, width=1000, height=500,
@@ -81,14 +122,42 @@ class GUIWindowNew(object):
         self.range = np.array([20,20,20])
         self.functions = []
 
+
+    def _parse_commands(self, cmd):
+        words = cmd.split()
+        cmd_key = words.pop(0)
+        if cmd_key == 'build':
+            m = rm.manager.get_motif(name=words[0])
+            self.state.vmg.add_motif(m)
+
+
+
     def listen(self):
-        key = self.listen_for_keys()
+        self.state.key = self.listen_for_keys()
         #self.listen_for_mouse()
+
+        val = self.tc.GetValue()
+        spl = val.split("\n")
+
+        if len(spl) > 1:
+            self._parse_commands(spl[0])
+            self.tc.SetValue("")
 
         for f in self.functions:
             if not f.activated:
                 continue
-            f.listen(self.scene, key)
+            f.listen(self.state)
+
+    def setup(self):
+        self.state = GUIWindowState()
+        self.state.scene = self.scene
+
+        if len(self.functions) == 1:
+            path = settings.RESOURCES_PATH + "/motifs/base.motif"
+            m = motif.file_to_motif(path)
+            self.state.vmg.add_motif(m)
+            self.state.motif_ends = self.state.vmg.open_ends
+
 
     def listen_for_keys(self):
         if self.scene.kb.keys: # event waiting to be processed?
@@ -105,7 +174,8 @@ class GUIWindowNew(object):
                 self.scene.forward = self.scene.forward.rotate(angle=0.1, axis=(0,0,1))
             elif key =='s':
                 self.scene.forward = self.scene.forward.rotate(angle=0.1, axis=(1,0,0))
-
+            elif key =='e':
+                exit()
             elif key =='left':
                 self.scene.center = self.scene.center+np.array([1,0,0])
             elif key =='right':
@@ -121,7 +191,8 @@ class GUIWindowNew(object):
 if __name__ == "__main__":
     win = GUIWindowNew()
     win.functions.append(DrawFunction())
-    p = sphere(pos=[1,0,0], radius=1.5, color=color.cyan)
+    win.setup()
+    #p = sphere(pos=[1,0,0], radius=1.5, color=color.cyan)
     while 1:
         rate(100)
         win.listen()
