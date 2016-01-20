@@ -357,16 +357,16 @@ class VMotifGraph(object):
         for n, i in leaf_and_ends:
             ni = n.index
             v_end = self.v_motifs[ni].ends[i]
-            self.open_ends.append(v_end)
+            self.open_ends.append(v_end.obj)
 
         if self.view_mode == 1:
             for v_end in self.open_ends:
-                v_end.obj.color = color.green
+                v_end.color = color.green
 
             for v_m in self.v_motifs:
                 for end in v_m.ends:
                     if end not in self.open_ends:
-                        end.obj.color = color.red
+                        end.color = color.red
 
 
 if __name__ == "__main__":

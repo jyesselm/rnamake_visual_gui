@@ -13,28 +13,37 @@ class GUIWindowFunction(object):
         pass
 
 
+class HighlightedEnd(object):
+    def __init__(self, end, point):
+        self.end = end
+        self.point = point
+
 class DrawFunction(GUIWindowFunction):
     def __init__(self):
         self.name = "Draw"
         self.activated = 1
         self.points = []
         self.highlighted_end = None
+        self.highlighted_ends = []
         self.lines = []
 
     def listen_for_keys(self, state):
         if state.key == 'd':
             if len(self.points) != 0:
                 last = self.points.pop()
+                for h_end in self.highlighted_ends:
+                    if h_end.point == last:
+                        h_end.end.color = color.green
+                        self.highlighted_ends.remove(h_end)
+                        break
                 last.visible = False
                 del last
+
             if len(self.lines) != 0:
                 last_l = self.lines.pop()
                 last_l.visible = False
                 del last_l
-            if len(self.points) == 0:
-                if self.highlighted_end != None:
-                    self.highlighted_end.color = color.green
-                    self.highlighted_end = None
+
         if state.key == 'r':
             all_points = []
             reg_points = []
@@ -77,13 +86,23 @@ class DrawFunction(GUIWindowFunction):
                                     color=color.black)
                     self.lines.append(line)
 
-            elif m1.pick in state.motif_ends:
-                m1.pick.color = color.magenta
-                self.highlighted_end = m1.pick
+            elif m1.pick in state.vmg.open_ends:
+                for h_end in self.highlighted_ends:
+                    if m1.pick == h_end.end:
+                        return
 
-                if len(self.points) == 0:
-                    p = sphere(pos=m1.pick.pos, radius=1.5, color=color.cyan)
-                    self.points.append(p)
+                m1.pick.color = color.magenta
+                p = sphere(pos=m1.pick.pos, radius=1.5, color=color.cyan)
+                self.highlighted_ends.append(HighlightedEnd(m1.pick, p))
+                self.points.append(p)
+
+                if len(self.points) > 1:
+                    line = cylinder(pos=self.points[-2].pos,
+                                    axis=p.pos - self.points[-2].pos,
+                                    color=color.black)
+                    self.lines.append(line)
+
+
 
     def listen(self, state):
         self.listen_for_keys(state)
@@ -94,9 +113,7 @@ class GUIWindowState(object):
     def __init__(self):
         self.scene = None
         self.key = None
-        self.motif_ends = []
         self.vmg = visual_structure.VMotifGraph(view_mode=1)
-
 
 
 class GUIWindowNew(object):
@@ -143,7 +160,6 @@ class GUIWindowNew(object):
                 if self.display_end_labels:
                     for i, end in enumerate(self.state.vmg.open_ends):
                         end.draw_label(i)
-                self.state.motif_ends = [x.obj for x in self.state.vmg.open_ends]
             else:
                 pass
 
@@ -180,11 +196,9 @@ class GUIWindowNew(object):
             path = settings.RESOURCES_PATH + "/motifs/base.motif"
             m = motif.file_to_motif(path)
             self.state.vmg.add_motif(m)
-            self.state.motif_ends = [x.obj for x in self.state.vmg.open_ends]
 
     def set_vmg(self, vmg):
         self.state.vmg = vmg
-        self.state.motif_ends =  [x.obj for x in vmg.open_ends]
 
     def listen_for_keys(self):
         if self.scene.kb.keys: # event waiting to be processed?
@@ -214,6 +228,7 @@ class GUIWindowNew(object):
             else:
                 return key
         return None
+
 
 def get_default_window():
     win = GUIWindowNew()
