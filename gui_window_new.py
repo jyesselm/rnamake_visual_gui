@@ -31,6 +31,10 @@ class DrawFunction(GUIWindowFunction):
                 last_l = self.lines.pop()
                 last_l.visible = False
                 del last_l
+            if len(self.points) == 0:
+                if self.highlighted_end != None:
+                    self.highlighted_end.color = color.green
+                    self.highlighted_end = None
         if state.key == 'r':
             all_points = []
             reg_points = []
@@ -91,8 +95,8 @@ class GUIWindowState(object):
         self.scene = None
         self.key = None
         self.motif_ends = []
-        self.vmg = visual_structure.VMotifGraph()
-        self.highlighted = None
+        self.vmg = visual_structure.VMotifGraph(view_mode=1)
+
 
 
 class GUIWindowNew(object):
@@ -122,15 +126,38 @@ class GUIWindowNew(object):
         self.range = np.array([20,20,20])
         self.functions = []
 
+        self.state = GUIWindowState()
+        self.state.scene = self.scene
+        self.display_end_labels = 0
 
     def _parse_commands(self, cmd):
         words = cmd.split()
         cmd_key = words.pop(0)
         if cmd_key == 'build':
             m = rm.manager.get_motif(name=words[0])
-            self.state.vmg.add_motif(m)
+            if len(words) == 1:
+                if self.display_end_labels:
+                     for i, end in enumerate(self.state.vmg.open_ends):
+                        end.hide_label()
+                self.state.vmg.add_motif(m)
+                if self.display_end_labels:
+                    for i, end in enumerate(self.state.vmg.open_ends):
+                        end.draw_label(i)
+                self.state.motif_ends = [x.obj for x in self.state.vmg.open_ends]
+            else:
+                pass
 
+        if cmd_key == 'show':
+            if words[0] == "labels":
+                self.display_end_labels = 1
+                for i, end in enumerate(self.state.vmg.open_ends):
+                    end.draw_label(i)
 
+        if cmd_key == 'hide':
+            if words[0] == "labels":
+                self.display_end_labels = 0
+                for i, end in enumerate(self.state.vmg.open_ends):
+                    end.hide_label()
 
     def listen(self):
         self.state.key = self.listen_for_keys()
@@ -149,15 +176,15 @@ class GUIWindowNew(object):
             f.listen(self.state)
 
     def setup(self):
-        self.state = GUIWindowState()
-        self.state.scene = self.scene
-
-        if len(self.functions) == 1:
+        if len(self.state.vmg.mg.graph) == 0:
             path = settings.RESOURCES_PATH + "/motifs/base.motif"
             m = motif.file_to_motif(path)
             self.state.vmg.add_motif(m)
-            self.state.motif_ends = self.state.vmg.open_ends
+            self.state.motif_ends = [x.obj for x in self.state.vmg.open_ends]
 
+    def set_vmg(self, vmg):
+        self.state.vmg = vmg
+        self.state.motif_ends =  [x.obj for x in vmg.open_ends]
 
     def listen_for_keys(self):
         if self.scene.kb.keys: # event waiting to be processed?
@@ -187,6 +214,12 @@ class GUIWindowNew(object):
             else:
                 return key
         return None
+
+def get_default_window():
+    win = GUIWindowNew()
+    win.functions.append(DrawFunction())
+    return win
+
 
 if __name__ == "__main__":
     win = GUIWindowNew()

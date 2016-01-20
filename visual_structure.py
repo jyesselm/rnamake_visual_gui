@@ -172,6 +172,7 @@ class VBasepair(primitives.Basepair, Drawable):
         primitives.Basepair.__init__(self, res1, res2, bp.bp_type)
         Drawable.__init__(self)
         self.obj = None
+        self.label = None
         self.r = bp.r()
 
     def _get_atoms(self):
@@ -194,6 +195,15 @@ class VBasepair(primitives.Basepair, Drawable):
             self.drawn = 1
             self.obj = cylinder(pos=self.d(), axis=self.r[2]*3,
                                   radius=8.0, color=color.red)
+
+    def draw_label(self, num):
+        self.label = label(pos=self.obj.pos, text='End: ' + str(num),
+                           space=self.obj.radius, color=color.black)
+
+    def hide_label(self):
+        self.label.visible = False
+        del self.label
+        self.label = None
 
     def clear(self):
         if self.drawn == 0:
@@ -309,11 +319,13 @@ class VMotif(primitives.Motif, Drawable):
             for r in self.structure.residues:
                 r.clear()
 
+
 class VMotifGraph(object):
-    def __init__(self, mg=None):
+    def __init__(self, mg=None, view_mode=0):
         self.mg = None
         self.v_motifs = []
         self.open_ends = []
+        self.view_mode = view_mode
         if mg is None:
             self.mg = motif_graph.MotifGraph()
         else:
@@ -334,7 +346,7 @@ class VMotifGraph(object):
         new_m = self.mg.last_node().data
 
         self.v_motifs.append(VMotif(new_m))
-        self.draw(1)
+        self.draw(self.view_mode)
 
     def draw(self, view_mode=0):
         for v_m in self.v_motifs:
@@ -344,22 +356,27 @@ class VMotifGraph(object):
         leaf_and_ends = self.mg.leafs_and_ends()
         for n, i in leaf_and_ends:
             ni = n.index
-            v_end = self.v_motifs[ni].v_ends[i]
+            v_end = self.v_motifs[ni].ends[i]
             self.open_ends.append(v_end)
 
-        for v_end in self.open_ends:
-            v_end.color = color.green
+        if self.view_mode == 1:
+            for v_end in self.open_ends:
+                v_end.obj.color = color.green
 
-        for v_m in self.v_motifs:
-            for end in v_m.v_ends:
-                if end not in self.open_ends:
-                    end.color = color.red
+            for v_m in self.v_motifs:
+                for end in v_m.ends:
+                    if end not in self.open_ends:
+                        end.obj.color = color.red
 
 
 if __name__ == "__main__":
     m0 = motif_factory.factory.motif_from_file("nodes.0.pdb")
-    vm = VMotif(m0)
-    vm.draw(1)
+
+    vmg = VMotifGraph(view_mode=1)
+    vmg.add_motif(m0)
+    for i, end in enumerate(vmg.open_ends):
+        end.draw_label(i)
+
 
 
 
