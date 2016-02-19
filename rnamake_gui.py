@@ -8,18 +8,21 @@ from rnamake import motif_factory, util, basic_io, motif_graph
 from rnamake.unittests import build
 from rnamake import resource_manager as rm
 
+rm.manager.add_motif("resources/GAAA_tetraloop")
+
 def parse_args():
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('-preset',  help='build preset',
                                     required=False)
+    parser.add_argument('-mg', help='load mg',
+                               required=False)
 
     args = parser.parse_args()
     return args
 
 def parse_presets(preset_name):
-    vmg = visual_structure.VMotifGraph(view_mode=1)
+    vmg = visual_structure.VMotifGraph(view_mode=2)
     if preset_name == "ttr":
-        rm.manager.add_motif("resources/GAAA_tetraloop")
         m = rm.manager.get_motif(name="GAAA_tetraloop", end_name="A229-A245")
         vmg.add_motif(m)
 
@@ -32,6 +35,12 @@ if __name__ == '__main__':
 
     if args.preset:
         vmg = parse_presets(args.preset)
+        gui_window.set_vmg(vmg)
+    elif args.mg:
+        f = open(args.mg)
+        lines = f.readlines()
+        f.close()
+        vmg = visual_structure.visual_motif_graph_from_topology(lines[0])
         gui_window.set_vmg(vmg)
 
     gui_window.setup()

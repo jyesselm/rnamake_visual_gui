@@ -1,7 +1,9 @@
 from visual import *
 from visual.controls import *
+import numpy as np
 
 from rnamake import util, motif_graph, motif_type, atom, primitives, motif_factory, residue
+from rnamake import resource_manager as rm
 
 class Drawable(object):
     def __init__(self):
@@ -47,6 +49,7 @@ class VResidue(primitives.Residue, Drawable):
         self.view_mode = 0
         self.drawn = 0
         self.bonds = []
+        self.cartoon_color = color.yellow
         self.rod = None
 
         for a in res.atoms:
@@ -92,11 +95,11 @@ class VResidue(primitives.Residue, Drawable):
         return beads
 
     def draw_bond(self, i, j):
-        pos_i = self.atoms[i].obj.pos
-        pos_j = self.atoms[j].obj.pos
+        pos_i = self.atoms[i].coords
+        pos_j = self.atoms[j].coords
         axis = pos_j - pos_i
 
-        b = cylinder(pos=pos_i, axis=axis, radius=0.20)
+        b = cylinder(pos=pos_i, axis=axis, radius=0.20, color=self.cartoon_color)
         self.bonds.append(b)
 
     def draw_bonds(self):
@@ -129,6 +132,27 @@ class VResidue(primitives.Residue, Drawable):
             self.draw_bond(22, 16)
             self.draw_bond(12, 18)
 
+    def draw_cartoon(self, points, norm):
+        cartoon = convex(color=self.cartoon_color)
+        for p in points:
+            cartoon.append(pos = p-norm)
+            cartoon.append(pos = p+norm)
+
+        return cartoon
+
+    def draw_base_cartoon(self, indices, pos1, pos2):
+        points = []
+        for i in indices:
+            points.append(self.atoms[i].coords)
+
+
+        dir1 = points[0] - points[pos1]
+        dir2 = points[0] - points[pos2]
+        norm = util.normalize(np.cross(dir1, dir2))*0.25
+
+        self.cartoons.append(self.draw_cartoon(points, norm))
+
+
     def draw(self, view_mode=0):
         self.view_mode = view_mode
         self.drawn = 1
@@ -146,6 +170,35 @@ class VResidue(primitives.Residue, Drawable):
             axis = pos_j - pos_i
             self.rod = cylinder(pos=pos_i, axis=axis, radius=1.0,
                                 color=color.blue)
+
+        if view_mode == 2:
+            sugar_points = []
+            sugar_points.append( self.atoms[5].coords)
+            sugar_points.append( self.atoms[6].coords)
+            sugar_points.append( self.atoms[9].coords)
+            sugar_points.append( self.atoms[10].coords)
+            sugar_points.append( self.atoms[7].coords)
+
+            dir1 = self.atoms[5].coords - self.atoms[9].coords
+            dir2 = self.atoms[5].coords - self.atoms[10].coords
+            norm = util.normalize(np.cross(dir1, dir2))*0.25
+            self.cartoons = []
+            self.draw_cartoon(sugar_points, norm)
+
+            if self.rtype.name == "ADE":
+                self.draw_base_cartoon([21, 20, 19, 16, 15], 3, 2)
+                self.draw_base_cartoon([17, 16, 15, 14, 13, 12], 3, 2)
+                self.draw_bond(21, 9)
+
+            elif self.rtype.name == "GUA":
+                self.draw_base_cartoon([22, 21, 20, 17, 16], 3, 2)
+                self.draw_base_cartoon([17, 16, 18, 12, 13, 15], 3, 2)
+                self.draw_bond(22, 9)
+
+            else:
+                self.draw_base_cartoon([12, 13, 15, 16, 18, 19], 3, 2)
+                self.draw_bond(12, 9)
+
 
     def clear(self):
         if self.drawn == 0:
@@ -214,20 +267,47 @@ class VBasepair(primitives.Basepair, Drawable):
             del self.obj
             self.obj = None
 
+    def highlight(self):
+        pass
+
+
 
 class VChain(primitives.Chain, Drawable):
     def __init__(self, chain):
         residues = []
         for r in chain.residues:
             residues.append(VResidue(r))
+            if r.rtype.name == "ADE":
+                residues[-1].cartoon_color = color.yellow
+            elif r.rtype.name == "GUA":
+                residues[-1].cartoon_color = color.red
+            elif r.rtype.name == "URA":
+                residues[-1].cartoon_color = color.blue
+            elif r.rtype.name == "CYT":
+                residues[-1].cartoon_color = color.green
 
         primitives.Chain.__init__(self, residues)
         Drawable.__init__(self)
+        self.obj = None
 
     def draw(self, view_mode=0):
         self.drawn = 1
         for r in self.residues:
             r.draw(view_mode)
+
+        if view_mode == 2:
+            points = []
+            for r in self.residues:
+                atoms = []
+                for i in (0,1,2,3,4,5):
+                    if r.atoms[i] is not None:
+                        atoms.append(r.atoms[i])
+                center = util.center(atoms)
+                points.append(center)
+            self.obj = curve(radius=0.5, color=color.orange)
+            for p in points:
+                self.obj.append(pos=p)
+
 
     def clear(self):
         if self.drawn == 0:
@@ -296,6 +376,9 @@ class VMotif(primitives.Motif, Drawable):
             r.draw(view_mode)
 
     def draw(self, view_mode=0):
+        if self.drawn == 1 and self.view_mode == view_mode:
+            return
+
         self.drawn = 1
         self.view_mode = view_mode
 
@@ -304,6 +387,9 @@ class VMotif(primitives.Motif, Drawable):
 
         if view_mode == 1:
             self._draw_cartoon(view_mode)
+
+        if view_mode == 2:
+            self.structure.draw(view_mode)
 
     def clear(self):
         if self.drawn == 0:
@@ -316,23 +402,35 @@ class VMotif(primitives.Motif, Drawable):
         if self.view_mode == 1:
             for bp in self.basepairs:
                 bp.clear()
-            for r in self.structure.residues:
+            for r in self.structure.residues():
                 r.clear()
 
 
 class VMotifGraph(object):
     def __init__(self, mg=None, view_mode=0):
         self.mg = None
-        self.v_motifs = []
+        self.v_motifs = {}
         self.open_ends = []
         self.view_mode = view_mode
         if mg is None:
             self.mg = motif_graph.MotifGraph()
+            self.mg.option('sterics', 0)
         else:
             self.mg = mg
             for n in self.mg.graph:
                 self.v_motifs.append(VMotif(n.data))
 
+
+    def add_motif_tree(self, mt, parent_index, parent_end_name):
+
+        last_pos = self.mg.last_node().index
+        self.mg.add_motif_tree(mt, parent_index, parent_end_name)
+
+        for n in self.mg.graph:
+            if n.index > last_pos:
+                self.v_motifs[n.index] = VMotif(n.data)
+
+        self.draw(self.view_mode)
 
     def add_motif(self, m=None, parent_index=-1, parent_end_index=-1,
                   parent_end_name=None, m_name=None, m_end_name=None):
@@ -345,44 +443,90 @@ class VMotifGraph(object):
 
         new_m = self.mg.last_node().data
 
-        self.v_motifs.append(VMotif(new_m))
+        self.v_motifs[pos] = VMotif(new_m)
         self.draw(self.view_mode)
 
+    def remove_node_level(self, level=None):
+        self.mg.remove_node_level(level)
+
+        remove = []
+        for i, v_m in self.v_motifs.iteritems():
+            try:
+                n = self.mg.get_node(i)
+            except:
+                remove.append(i)
+
+        for r in remove:
+            v_m = self.v_motifs[r]
+            v_m.clear()
+            del self.v_motifs[r]
+
+        self.highlight_open_ends()
+
     def draw(self, view_mode=0):
-        for v_m in self.v_motifs:
+        for v_m in self.v_motifs.values():
             v_m.draw(view_mode)
 
-        self.open_ends = []
+        self.highlight_open_ends()
+
+    def highlight_open_ends(self):
         leaf_and_ends = self.mg.leafs_and_ends()
+        self.open_ends = []
+        self.open_bp_ends = []
         for n, i in leaf_and_ends:
             ni = n.index
             v_end = self.v_motifs[ni].ends[i]
+            self.open_bp_ends.append([ni, v_end])
             self.open_ends.append(v_end.obj)
 
         if self.view_mode == 1:
             for v_end in self.open_ends:
                 v_end.color = color.green
 
-            for v_m in self.v_motifs:
+            for v_m in self.v_motifs.values():
                 for end in v_m.ends:
-                    if end not in self.open_ends:
-                        end.color = color.red
+                    if end.obj not in self.open_ends:
+                        end.obj.color = color.red
+
+
+def visual_motif_graph_from_topology(s):
+    spl = s.split("&")
+    node_spl = spl[0].split("|")
+    vmg = VMotifGraph(view_mode=1)
+    for i, n_spl in enumerate(node_spl[:-1]):
+        sspl = n_spl.split(",")
+        if rm.manager.motif_exists(name=sspl[0], end_name=sspl[1], end_id=sspl[2]):
+            m = rm.manager.get_motif(name=sspl[0], end_name=sspl[1], end_id=sspl[2])
+        elif rm.manager.motif_exists(name=sspl[0], end_id=sspl[2]):
+            m = rm.manager.get_motif(name=sspl[0], end_id=sspl[2])
+            print "warning: cannot find exact motif"
+        else:
+            print sspl
+            raise ValueError("cannot find motif")
+
+        pos = vmg.add_motif(m, parent_index=int(sspl[3]), parent_end_name=sspl[4])
+        #print pos, sspl
+        if pos == -1:
+            raise ValueError("cannot get mg from topology failed to add motif")
+
+    if len(spl) == 1:
+        return vmg
+    connection_spl = spl[1].split("|")
+    for c_spl in connection_spl[:-1]:
+        sspl = c_spl.split()
+        vmg.add_connection(int(sspl[0]), int(sspl[1]), sspl[2], sspl[3])
+
+    return vmg
+
 
 
 if __name__ == "__main__":
-    m0 = motif_factory.factory.motif_from_file("nodes.0.pdb")
-
-    vmg = VMotifGraph(view_mode=1)
-    vmg.add_motif(m0)
-    for i, end in enumerate(vmg.open_ends):
-        end.draw_label(i)
-
-
-
-
-
-
-
+    rm.manager.add_motif("resources/GAAA_tetraloop")
+    m = rm.manager.get_motif(name="GAAA_tetraloop", end_name="A229-A245")
+    vmg = VMotifGraph(view_mode=2)
+    vmg.add_motif(m)
+    #for i, end in enumerate(vmg.open_ends):
+    #    end.draw_label(i)
 
 
 

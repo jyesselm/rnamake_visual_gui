@@ -125,6 +125,26 @@ if __name__ == "__main__":
     #will not show if no object is created!!!
     gui_window = GUIWindow()
     p = sphere(pos=[1,0,0], radius=1.5, color=color.cyan)
-    while 1:
-        rate(100)
-        gui_window.listen()
+
+    a = convex(color=(0.5,0,0))
+    b = convex(color=(0,0.5,0))
+    c = convex(color=(0,0,0.5))
+    d = convex(color=(0.5,0,0.5))
+    e = convex(color=(0.5,0.5,0))
+    f = convex(color=(0,0.5,0.5))
+
+    # triangle
+    t = arange(0,2*pi,2*pi/3)
+
+    # disk
+    for t in arange(0,2*pi,0.1):
+        a.append(pos = (cos(t),0,sin(t)))
+        a.append(pos = (cos(t),0.2,sin(t)))
+
+    # box
+    for i in range(8):
+        p = vector((i/4)%2 - 2.5, (i/2)%2 - 0.5, (i)%2 - 0.5)
+        b.append(pos=p)
+    #while 1:
+    #    rate(100)
+    #    gui_window.listen()
