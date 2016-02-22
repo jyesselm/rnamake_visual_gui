@@ -4,7 +4,7 @@ import numpy as np
 import wx
 
 import visual_structure
-import wrapper
+import path_builder
 from rnamake import motif, settings, util, basic_io, motif_tree
 from rnamake import resource_manager as rm
 
@@ -15,11 +15,6 @@ class GUIWindowFunction(object):
     def listen(self, scene):
         pass
 
-
-class HighlightedEnd(object):
-    def __init__(self, end, point):
-        self.end = end
-        self.point = point
 
 class DrawFunction(GUIWindowFunction):
     def __init__(self):
@@ -286,119 +281,157 @@ class DrawFunctionNew2(GUIWindowFunction):
         self.name = "Draw"
         self.activated = 1
         self.points = []
-        self.highlighted_end = None
         self.highlighted_ends = []
         self.lines = []
-        self.wrapper = wrapper.FollowPathWrapper()
         self.just_built = 0
+        self.path_builder = path_builder.PathBuilder()
 
         self.full_path = []
 
     def listen_for_keys(self, state):
+        if state.key == 'u':
+            pass
+
         if state.key == 'd':
-            if len(self.points) != 0:
-                last = self.points.pop()
-                for h_end in self.highlighted_ends:
-                    if h_end.point == last:
-                        h_end.end.color = color.green
-                        self.highlighted_ends.remove(h_end)
-                        break
-                last.visible = False
-                del last
+            if len(self.points) == 0:
+                return
+
+            last = self.points.pop()
+            last.visible = False
+            del last
 
             if len(self.lines) != 0:
                 last_l = self.lines.pop()
                 last_l.visible = False
                 del last_l
 
+                if len(self.lines) != 0:
+                    last_l = self.lines.pop()
+                    last_l.visible = False
+                    del last_l
+
+            if len(self.points) == 1:
+                last  = self.points.pop()
+                last.visible = False
+                del last
+
+
         if state.key == 'r':
-            all_points = []
-            reg_points = []
-            for p in self.points:
-                reg_points.append(np.array(p.pos))
+            self._run_path_finding(state)
 
-            for i in range(len(reg_points)-1):
-                all_points.append(reg_points[i])
-                diff = reg_points[i+1] - reg_points[i]
-                unit_vector = util.normalize(diff)
-                current = reg_points[i] + unit_vector*5.0
-                while util.distance(reg_points[i+1], current) > 5.0:
-                    all_points.append(current)
-                    current = current + unit_vector*5.0
+    def _add_points_on_rna(self, m1, state):
+        for ni, v_end in state.vmg.open_bp_ends:
+            if not v_end.clicked(m1.pick):
+                continue
 
-            s = basic_io.points_to_str(all_points)
-            f = open("all_points.str", "w")
-            f.write(s)
-            f.close()
-            basic_io.points_to_pdb("all_points.pdb", all_points)
+            self.highlighted_ends.append([ni, v_end])
 
-            print "all points: ", len(all_points)
+            if len(self.points) > 1:
+                return
 
-            f = open("mg.top", "w")
-            f.write(state.vmg.mg.topology_to_str() + "\n")
-            actual_open_end = None
-            actual_ni = 0
-            for end in self.highlighted_ends:
-                for ni, open_end in state.vmg.open_bp_ends:
-                    if open_end.obj == end.end:
-                        actual_open_end = open_end
-                        actual_ni = ni
-                        f.write(str(ni) + " " + open_end.name() + "\n")
-            f.close()
+            pos = v_end.d
+            if len(self.points) > 0:
+                dist = util.distance(pos, self.points[-1].pos)
+                if dist < 1:
+                    return
 
-            self.wrapper.run(path="all_points.str", mg="mg.top")
+            p = sphere(pos=pos, radius=0.1, color=color.cyan)
+            self.points.append(p)
 
-            f = open("mt_out.top")
-            lines = f.readlines()
-            f.close()
+            dir = v_end.r[2]
+            line = cylinder(pos=pos, axis=-dir*20,
+                            color=color.cyan, radius=7)
 
-            mt = motif_tree.motif_tree_from_topology_str(lines[0])
-            actual_open_end.obj.color = color.red
-            state.vmg.mg.increase_level()
-            print actual_ni, actual_open_end.name()
-            state.vmg.add_motif_tree(mt, actual_ni, actual_open_end.name())
-            self.just_built = 1
+            self.lines.append(line)
 
+            new_pos = pos - dir*20
+            p = sphere(pos=new_pos, radius=7.5, color=color.cyan)
+            self.points.append(p)
+
+    def _run_path_finding(self, state):
+        all_points = []
+        reg_points = []
+        for p in self.points:
+            reg_points.append(np.array(p.pos))
+
+        for i in range(len(reg_points)-1):
+            all_points.append(reg_points[i])
+            diff = reg_points[i+1] - reg_points[i]
+            unit_vector = util.normalize(diff)
+            current = reg_points[i] + unit_vector*5.0
+            while util.distance(reg_points[i+1], current) > 5.0:
+                all_points.append(current)
+                current = current + unit_vector*5.0
+
+        print len(all_points)
+
+        s = basic_io.points_to_str(all_points)
+        f = open("all_points.str", "w")
+        f.write(s)
+        f.close()
+        basic_io.points_to_pdb("all_points.pdb", all_points)
+
+        f = open("mg.top", "w")
+        f.write(state.vmg.mg.topology_to_str() + "\n")
+        actual_open_end = None
+        actual_ni = 0
+        f.write(str(self.highlighted_ends[0][0]) + " " + self.highlighted_ends[0][1].name())
+        f.close()
+
+        self.path_builder.build()
+
+        """f = open("mt_out.top")
+        lines = f.readlines()
+        f.close()
+
+        mt = motif_tree.motif_tree_from_topology_str(lines[0])
+        actual_open_end.obj.color = color.red
+        state.vmg.mg.increase_level()
+        print actual_ni, actual_open_end.name()
+        state.vmg.add_motif_tree(mt, actual_ni, actual_open_end.name())
+        self.just_built = 1"""
 
     def listen_for_mouse(self, state):
-        if state.scene.mouse.events:
-            m1 = state.scene.mouse.getevent() # get event
+        if  state.m_event:
+            m1 = state.m_event# get event
 
-            if m1.pick is None:
-                p = sphere(pos=m1.pos, radius=7, color=color.cyan)
+            if m1.button == 'left' and m1.alt and m1.pick:
+                self._add_points_on_rna(m1, state)
+
+            elif m1.button == 'left' and m1.alt:
+
+                pos = m1.pos
+                if len(self.points) > 0:
+                    dist = util.distance(pos, self.points[-1].pos)
+                    if dist < 1:
+                        return
+
+                #need points on RNA first
+                if len(self.points) == 0:
+                    return
+
+                p = sphere(pos=pos, radius=7.5, color=color.cyan)
                 self.points.append(p)
 
 
                 if len(self.points) > 1:
                     line = cylinder(pos=self.points[-2].pos,
-                                    axis=p.pos - self.points[-2].pos,
-                                    color=color.black,
+                                    axis=(p.pos - self.points[-2].pos)/2,
+                                    color=color.cyan,
                                     radius = 7)
                     self.lines.append(line)
 
-            elif m1.pick in state.vmg.open_ends:
-                for h_end in self.highlighted_ends:
-                    if m1.pick == h_end.end:
-                        return
-
-                m1.pick.color = color.magenta
-                p = sphere(pos=m1.pick.pos, radius=7, color=color.cyan)
-                self.highlighted_ends.append(HighlightedEnd(m1.pick, p))
-                self.points.append(p)
-
-                if len(self.points) > 1:
-                    line = cylinder(pos=self.points[-2].pos,
-                                    axis=p.pos - self.points[-2].pos,
-                                    color=color.black)
+                    new_pos = self.points[-2].pos + (p.pos - self.points[-2].pos)/2
+                    line = cylinder(pos=new_pos,
+                                    axis=(new_pos - self.points[-2].pos),
+                                    color=color.cyan,
+                                    radius = 7)
                     self.lines.append(line)
-
 
 
     def listen(self, state):
         self.listen_for_keys(state)
         self.listen_for_mouse(state)
-
-
 
 
 class GUIWindowState(object):
@@ -431,7 +464,7 @@ class GUIWindowNew(object):
         d = 20
         self.scene = display(window=self.window, x=10, y=100, width=1000, height=500,
                             center=(5,0,0), background=(1,1,1), ambient=color.gray(0.5),
-                            userspin=False)
+                            userspin=False, userzoom=False)
 
         self.range = np.array([20,20,20])
         self.scene.range = self.range
@@ -493,29 +526,35 @@ class GUIWindowNew(object):
 
     def listen(self):
         self.state.key = self.listen_for_keys()
-        self.listen_for_mouse()
+        self.state.m_event = self.listen_for_mouse()
 
         if self.dragging:
             vec1 = util.normalize(self.scene.mouse.pos - self.lastpos)
 
             if util.distance(vec1, [0, 0, 0]) > 0.1:
-
                 vec2 = self.scene.forward
                 rotation = cross(vec1, vec2)
-                self.scene.forward = self.scene.forward.rotate(angle=0.01,
+                mag = util.distance(self.scene.mouse.pos - self.lastpos, [0,0,0])
+                self.scene.forward = self.scene.forward.rotate(angle=0.0005*mag,
                                                                axis=rotation)
+
+                if self.scene.forward.y > 0.90:
+                    self.scene.forward.y = 0.90
+                if self.scene.forward.y < -0.90:
+                    self.scene.forward.y = -0.90
 
         if self.zooming:
             vec1 = util.normalize(self.scene.mouse.pos - self.lastpos)
 
             if util.distance(vec1, [0, 0, 0]) > 0.1:
 
+                mag = util.distance(self.scene.mouse.pos - self.lastpos, [0,0,0])
                 if vec1[1] > 0:
-                    self.scene.range = self.range/1.003
-                    self.range = self.range/1.003
+                    self.scene.range = self.range/(1.000 + 0.0005*mag)
+                    self.range = self.range/(1.000 + 0.0005*mag)
                 if vec1[1] < 0:
-                    self.scene.range = self.range/0.997
-                    self.range = self.range/0.997
+                    self.scene.range = self.range/(1.000 - 0.0005*mag)
+                    self.range = self.range/(1.000 - 0.0005*mag)
 
 
         val = self.tc.GetValue()
@@ -587,6 +626,11 @@ class GUIWindowNew(object):
             if m1.button == 'right' and m1.drop:
                 self.zooming = 0
 
+            return m1
+
+        return None
+
+
 
 
 
@@ -595,7 +639,7 @@ class GUIWindowNew(object):
 
 def get_default_window():
     win = GUIWindowNew()
-    #win.functions.append(DrawFunctionNew2())
+    win.functions.append(DrawFunctionNew2())
     return win
 
 

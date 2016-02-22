@@ -182,8 +182,7 @@ class VResidue(primitives.Residue, Drawable):
             dir1 = self.atoms[5].coords - self.atoms[9].coords
             dir2 = self.atoms[5].coords - self.atoms[10].coords
             norm = util.normalize(np.cross(dir1, dir2))*0.25
-            self.cartoons = []
-            self.draw_cartoon(sugar_points, norm)
+            self.cartoons = [ self.draw_cartoon(sugar_points, norm) ]
 
             if self.rtype.name == "ADE":
                 self.draw_base_cartoon([21, 20, 19, 16, 15], 3, 2)
@@ -227,6 +226,7 @@ class VBasepair(primitives.Basepair, Drawable):
         self.obj = None
         self.label = None
         self.r = bp.r()
+        self.d = bp.d()
 
     def _get_atoms(self):
         atoms = []
@@ -268,8 +268,23 @@ class VBasepair(primitives.Basepair, Drawable):
             self.obj = None
 
     def highlight(self):
-        pass
+        if self.view_mode == 2:
+            for c in self.res1.cartoons:
+                c.color = color.magenta
+            self.res1.bonds[0].color = color.magenta
+            for c in self.res2.cartoons:
+                c.color = color.magenta
+            self.res2.bonds[0].color = color.magenta
 
+    def clicked(self, obj):
+        if self.view_mode == 2:
+            for c in self.res1.cartoons:
+                if c == obj:
+                    return 1
+            for c in self.res2.cartoons:
+                if c == obj:
+                    return 1
+        return 0
 
 
 class VChain(primitives.Chain, Drawable):
@@ -382,6 +397,9 @@ class VMotif(primitives.Motif, Drawable):
         self.drawn = 1
         self.view_mode = view_mode
 
+        for bp in self.basepairs:
+            bp.draw(view_mode)
+
         if view_mode == 0:
             self.structure.draw(view_mode)
 
@@ -471,22 +489,24 @@ class VMotifGraph(object):
 
     def highlight_open_ends(self):
         leaf_and_ends = self.mg.leafs_and_ends()
-        self.open_ends = []
         self.open_bp_ends = []
         for n, i in leaf_and_ends:
             ni = n.index
             v_end = self.v_motifs[ni].ends[i]
             self.open_bp_ends.append([ni, v_end])
-            self.open_ends.append(v_end.obj)
 
-        if self.view_mode == 1:
+        for ni, v_end in self.open_bp_ends:
+            v_end.highlight()
+
+
+        """if self.view_mode == 1:
             for v_end in self.open_ends:
                 v_end.color = color.green
 
             for v_m in self.v_motifs.values():
                 for end in v_m.ends:
                     if end.obj not in self.open_ends:
-                        end.obj.color = color.red
+                        end.obj.color = color.red"""
 
 
 def visual_motif_graph_from_topology(s):
