@@ -2,13 +2,12 @@ from visual import *
 from visual.graph import *
 import numpy as np
 import wx
+import copy
 
 import visual_structure
 import path_builder
 from rnamake import motif, settings, util, basic_io, motif_tree
 from rnamake import resource_manager as rm
-
-R = 5
 
 class GUIWindowFunction(object):
 
@@ -287,10 +286,20 @@ class DrawFunctionNew2(GUIWindowFunction):
         self.path_builder = path_builder.PathBuilder()
 
         self.full_path = []
+        self.pick = None
+        self.dragpos = [0,0,0]
+        self.count = 0
+
+        self.previous_points = []
+
 
     def listen_for_keys(self, state):
         if state.key == 'u':
-            pass
+            if len(self.previous_points) > 0:
+                pos = self.previous_points.pop()
+                for i, p in enumerate(self.points):
+                    p.pos = pos[i]
+                self._update_path()
 
         if state.key == 'd':
             if len(self.points) == 0:
@@ -373,32 +382,68 @@ class DrawFunctionNew2(GUIWindowFunction):
 
         f = open("mg.top", "w")
         f.write(state.vmg.mg.topology_to_str() + "\n")
-        actual_open_end = None
-        actual_ni = 0
         f.write(str(self.highlighted_ends[0][0]) + " " + self.highlighted_ends[0][1].name())
         f.close()
 
         self.path_builder.build()
 
-        """f = open("mt_out.top")
+        f = open("mt_out.top")
         lines = f.readlines()
         f.close()
 
         mt = motif_tree.motif_tree_from_topology_str(lines[0])
-        actual_open_end.obj.color = color.red
         state.vmg.mg.increase_level()
-        print actual_ni, actual_open_end.name()
-        state.vmg.add_motif_tree(mt, actual_ni, actual_open_end.name())
-        self.just_built = 1"""
+        state.vmg.add_motif_tree(mt,
+                                 self.highlighted_ends[0][0],
+                                 self.highlighted_ends[0][1].name())
+
+        for p in self.points:
+            p.opacity = 0.5
+        for l in self.lines:
+            l.opacity = 0.5
+
+        self.just_built = 1
+
+    def _update_path(self):
+        count = 1
+        for i, l in enumerate(self.lines):
+            if i == 0:
+                l.pos = self.points[i].pos
+                l.axis = self.points[i+1].pos - self.points[i].pos
+            else:
+                if i % 2 == 1:
+                    l.pos = self.points[count].pos
+                    l.axis = (self.points[count+1].pos - self.points[count].pos)/2
+                else:
+                    new_pos = self.points[count].pos + \
+                              (self.points[count+1].pos - self.points[count].pos)/2
+                    l.pos = new_pos
+                    l.axis = (new_pos - self.points[count].pos)
+                    count +=1
 
     def listen_for_mouse(self, state):
         if  state.m_event:
             m1 = state.m_event# get event
 
-            if m1.button == 'left' and m1.alt and m1.pick:
-                self._add_points_on_rna(m1, state)
+            if m1.drop:
+                self.pick = None
+                self._update_path()
 
-            elif m1.button == 'left' and m1.alt:
+            if m1.button == 'left' and m1.alt and m1.pick:
+                if m1.pick in self.points and m1.drag:
+                    dist = util.distance(self.dragpos, m1.pickpos)
+                    if dist < 1:
+                        return
+
+                    self.previous_points.append([vector(p.pos) for p in self.points])
+
+                    self.dragpos = m1.pickpos
+                    self.pick = m1.pick
+
+                else:
+                    self._add_points_on_rna(m1, state)
+
+            elif m1.button == 'left' and m1.alt and not m1.drag:
 
                 pos = m1.pos
                 if len(self.points) > 0:
@@ -429,9 +474,20 @@ class DrawFunctionNew2(GUIWindowFunction):
                     self.lines.append(line)
 
 
+
+
+
+
+
     def listen(self, state):
         self.listen_for_keys(state)
         self.listen_for_mouse(state)
+
+        if self.pick:
+            new_pos = state.scene.mouse.pos
+            if new_pos != self.dragpos:
+                self.pick.pos += new_pos - self.dragpos
+                self.dragpos = new_pos
 
 
 class GUIWindowState(object):
@@ -535,7 +591,7 @@ class GUIWindowNew(object):
                 vec2 = self.scene.forward
                 rotation = cross(vec1, vec2)
                 mag = util.distance(self.scene.mouse.pos - self.lastpos, [0,0,0])
-                self.scene.forward = self.scene.forward.rotate(angle=0.0005*mag,
+                self.scene.forward = self.scene.forward.rotate(angle=0.0007*mag,
                                                                axis=rotation)
 
                 if self.scene.forward.y > 0.90:
@@ -612,18 +668,18 @@ class GUIWindowNew(object):
         if self.scene.mouse.events:
             m1 = self.scene.mouse.getevent() # get event
 
-            if m1.button == 'left' and m1.drag:
+            if m1.button == 'left' and m1.drag and not m1.alt:
                 self.lastpos = m1.pos
                 self.dragging = 1
 
-            if  m1.button == 'left' and m1.drop:
+            if  m1.button == 'left' and m1.drop and not m1.alt:
                 self.dragging = 0
 
-            if m1.button == 'right' and m1.drag:
+            if m1.button == 'right' and m1.drag and not m1.alt:
                 self.lastpos = m1.pos
                 self.zooming = 1
 
-            if m1.button == 'right' and m1.drop:
+            if m1.button == 'right' and m1.drop and not m1.alt:
                 self.zooming = 0
 
             return m1

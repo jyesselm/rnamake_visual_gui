@@ -218,6 +218,15 @@ class VResidue(primitives.Residue, Drawable):
             del self.rod
             self.rod = None
 
+        if self.view_mode == 2:
+            for c in self.cartoons:
+                c.visible = False
+                del c
+            self.cartoons = []
+            b = self.bonds.pop()
+            b.visible = False
+            del b
+
 
 class VBasepair(primitives.Basepair, Drawable):
     def __init__(self, res1, res2, bp):
@@ -244,8 +253,8 @@ class VBasepair(primitives.Basepair, Drawable):
 
     def draw(self, view_mode=0):
         self.view_mode = view_mode
-        if view_mode == 1:
-            self.drawn = 1
+        self.drawn = 1
+        if view_mode == 1 and self.bp_type == "cW-W":
             self.obj = cylinder(pos=self.d(), axis=self.r[2]*3,
                                   radius=8.0, color=color.red)
 
@@ -266,6 +275,9 @@ class VBasepair(primitives.Basepair, Drawable):
             self.obj.visible = False
             del self.obj
             self.obj = None
+        if self.view_mode == 2:
+            self.res1.clear()
+            self.res2.clear()
 
     def highlight(self):
         if self.view_mode == 2:
@@ -375,8 +387,7 @@ class VMotif(primitives.Motif, Drawable):
 
     def _draw_cartoon(self, view_mode):
         for bp in self.basepairs:
-            if bp.bp_type == "cW-W":
-                bp.draw(view_mode)
+            bp.draw(view_mode)
 
         if self.mtype == motif_type.HELIX:
             return
@@ -408,6 +419,7 @@ class VMotif(primitives.Motif, Drawable):
 
         if view_mode == 2:
             self.structure.draw(view_mode)
+            self._draw_cartoon(view_mode)
 
     def clear(self):
         if self.drawn == 0:
@@ -438,7 +450,6 @@ class VMotifGraph(object):
             for n in self.mg.graph:
                 self.v_motifs.append(VMotif(n.data))
 
-
     def add_motif_tree(self, mt, parent_index, parent_end_name):
 
         last_pos = self.mg.last_node().index
@@ -449,6 +460,11 @@ class VMotifGraph(object):
                 self.v_motifs[n.index] = VMotif(n.data)
 
         self.draw(self.view_mode)
+
+        for n in self.mg.graph:
+             if n.index > last_pos:
+                self.v_motifs[n.index].ends[0].clear()
+
 
     def add_motif(self, m=None, parent_index=-1, parent_end_index=-1,
                   parent_end_name=None, m_name=None, m_end_name=None):
@@ -462,6 +478,7 @@ class VMotifGraph(object):
         new_m = self.mg.last_node().data
 
         self.v_motifs[pos] = VMotif(new_m)
+        self.v_motifs[pos].ends[0].clear()
         self.draw(self.view_mode)
 
     def remove_node_level(self, level=None):
@@ -497,16 +514,6 @@ class VMotifGraph(object):
 
         for ni, v_end in self.open_bp_ends:
             v_end.highlight()
-
-
-        """if self.view_mode == 1:
-            for v_end in self.open_ends:
-                v_end.color = color.green
-
-            for v_m in self.v_motifs.values():
-                for end in v_m.ends:
-                    if end.obj not in self.open_ends:
-                        end.obj.color = color.red"""
 
 
 def visual_motif_graph_from_topology(s):
