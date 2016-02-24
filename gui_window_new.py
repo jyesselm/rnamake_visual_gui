@@ -282,7 +282,7 @@ class DrawFunctionNew2(GUIWindowFunction):
         self.points = []
         self.highlighted_ends = []
         self.lines = []
-        self.just_built = 0
+        self.built = 0
         self.path_builder = path_builder.PathBuilder()
 
         self.full_path = []
@@ -358,6 +358,10 @@ class DrawFunctionNew2(GUIWindowFunction):
             self.points.append(p)
 
     def _run_path_finding(self, state):
+        if self.built:
+            state.vmg.remove_node_level()
+            state.vmg.mg.decrease_level()
+
         all_points = []
         reg_points = []
         for p in self.points:
@@ -371,8 +375,6 @@ class DrawFunctionNew2(GUIWindowFunction):
             while util.distance(reg_points[i+1], current) > 5.0:
                 all_points.append(current)
                 current = current + unit_vector*5.0
-
-        print len(all_points)
 
         s = basic_io.points_to_str(all_points)
         f = open("all_points.str", "w")
@@ -402,7 +404,7 @@ class DrawFunctionNew2(GUIWindowFunction):
         for l in self.lines:
             l.opacity = 0.5
 
-        self.just_built = 1
+        self.built = 1
 
     def _update_path(self):
         count = 1
@@ -472,11 +474,6 @@ class DrawFunctionNew2(GUIWindowFunction):
                                     color=color.cyan,
                                     radius = 7)
                     self.lines.append(line)
-
-
-
-
-
 
 
     def listen(self, state):

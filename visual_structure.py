@@ -50,6 +50,7 @@ class VResidue(primitives.Residue, Drawable):
         self.drawn = 0
         self.bonds = []
         self.cartoon_color = color.yellow
+        self.cartoons = []
         self.rod = None
 
         for a in res.atoms:
@@ -152,7 +153,6 @@ class VResidue(primitives.Residue, Drawable):
 
         self.cartoons.append(self.draw_cartoon(points, norm))
 
-
     def draw(self, view_mode=0):
         self.view_mode = view_mode
         self.drawn = 1
@@ -182,6 +182,9 @@ class VResidue(primitives.Residue, Drawable):
             dir1 = self.atoms[5].coords - self.atoms[9].coords
             dir2 = self.atoms[5].coords - self.atoms[10].coords
             norm = util.normalize(np.cross(dir1, dir2))*0.25
+            if len(self.cartoons) > 0:
+                return
+
             self.cartoons = [ self.draw_cartoon(sugar_points, norm) ]
 
             if self.rtype.name == "ADE":
@@ -198,16 +201,15 @@ class VResidue(primitives.Residue, Drawable):
                 self.draw_base_cartoon([12, 13, 15, 16, 18, 19], 3, 2)
                 self.draw_bond(12, 9)
 
-
     def clear(self):
         if self.drawn == 0:
             return
-        self.drawn = 0
-
-        for a in self.atoms:
-            a.clear()
+        #self.drawn = 0
 
         if self.view_mode == 0:
+            for a in self.atoms:
+                a.clear()
+
             for b in self.bonds:
                 b.visible = False
                 del b
@@ -218,11 +220,12 @@ class VResidue(primitives.Residue, Drawable):
             del self.rod
             self.rod = None
 
-        if self.view_mode == 2:
-            for c in self.cartoons:
-                c.visible = False
-                del c
-            self.cartoons = []
+        while len(self.cartoons) > 0:
+            c = self.cartoons.pop()
+            c.visible = False
+            del c
+
+        while len(self.bonds) > 0:
             b = self.bonds.pop()
             b.visible = False
             del b
@@ -318,6 +321,7 @@ class VChain(primitives.Chain, Drawable):
         self.obj = None
 
     def draw(self, view_mode=0):
+        self.view_mode = view_mode
         self.drawn = 1
         for r in self.residues:
             r.draw(view_mode)
@@ -335,13 +339,15 @@ class VChain(primitives.Chain, Drawable):
             for p in points:
                 self.obj.append(pos=p)
 
-
     def clear(self):
         if self.drawn == 0:
             return
         self.drawn = 0
         for r in self.residues:
             r.clear()
+        if self.view_mode == 2:
+            self.obj.visible = False
+            del self.obj
 
 
 class VStructure(primitives.Structure, Drawable):
@@ -430,6 +436,13 @@ class VMotif(primitives.Motif, Drawable):
             self.structure.clear()
 
         if self.view_mode == 1:
+            for bp in self.basepairs:
+                bp.clear()
+            for r in self.structure.residues():
+                r.clear()
+
+        if self.view_mode == 2:
+            self.structure.clear()
             for bp in self.basepairs:
                 bp.clear()
             for r in self.structure.residues():
