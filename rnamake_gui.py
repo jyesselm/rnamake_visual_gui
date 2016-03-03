@@ -16,6 +16,8 @@ def parse_args():
                                     required=False)
     parser.add_argument('-mg', help='load mg',
                                required=False)
+    parser.add_argument('-s', help='load from save file',
+                              required=False)
 
     args = parser.parse_args()
     return args
@@ -36,6 +38,8 @@ if __name__ == '__main__':
     if args.preset:
         vmg = parse_presets(args.preset)
         gui_window.set_vmg(vmg)
+    elif args.s:
+        gui_window.load_from_save(args.s)
     elif args.mg:
         f = open(args.mg)
         lines = f.readlines()

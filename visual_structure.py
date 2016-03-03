@@ -291,6 +291,18 @@ class VBasepair(primitives.Basepair, Drawable):
                 c.color = color.magenta
             self.res2.bonds[0].color = color.magenta
 
+    def remove_highlight(self):
+        if self.view_mode == 2:
+            for c in self.res1.cartoons:
+                c.color = self.res1.cartoon_color
+            for b in self.res1.bonds:
+                b.color = self.res1.cartoon_color
+
+            for c in self.res2.cartoons:
+                c.color = self.res2.cartoon_color
+            for b in self.res2.bonds:
+                b.color = self.res2.cartoon_color
+
     def clicked(self, obj):
         if self.view_mode == 2:
             for c in self.res1.cartoons:
@@ -478,7 +490,6 @@ class VMotifGraph(object):
              if n.index > last_pos:
                 self.v_motifs[n.index].ends[0].clear()
 
-
     def add_motif(self, m=None, parent_index=-1, parent_end_index=-1,
                   parent_end_name=None, m_name=None, m_end_name=None):
 
@@ -491,8 +502,8 @@ class VMotifGraph(object):
         new_m = self.mg.last_node().data
 
         self.v_motifs[pos] = VMotif(new_m)
-        self.v_motifs[pos].ends[0].clear()
         self.draw(self.view_mode)
+        self.v_motifs[pos].ends[0].clear()
 
     def remove_node_level(self, level=None):
         self.mg.remove_node_level(level)
@@ -520,19 +531,25 @@ class VMotifGraph(object):
     def highlight_open_ends(self):
         leaf_and_ends = self.mg.leafs_and_ends()
         self.open_bp_ends = []
+        open_ends = []
         for n, i in leaf_and_ends:
             ni = n.index
             v_end = self.v_motifs[ni].ends[i]
+            open_ends.append(v_end)
+            v_end.highlight()
             self.open_bp_ends.append([ni, v_end])
 
-        for ni, v_end in self.open_bp_ends:
-            v_end.highlight()
+        for vm in self.v_motifs.values():
+            for end in vm.ends:
+                if end not in open_ends:
+                    end.remove_highlight()
+
 
 
 def visual_motif_graph_from_topology(s):
     spl = s.split("&")
     node_spl = spl[0].split("|")
-    vmg = VMotifGraph(view_mode=1)
+    vmg = VMotifGraph(view_mode=2)
     for i, n_spl in enumerate(node_spl[:-1]):
         sspl = n_spl.split(",")
         if rm.manager.motif_exists(name=sspl[0], end_name=sspl[1], end_id=sspl[2]):
